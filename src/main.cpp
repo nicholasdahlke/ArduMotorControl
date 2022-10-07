@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <math.h>
 
 class Stepper
 {
@@ -16,7 +15,7 @@ class Stepper
     void goto_angle_pos_abs(float pos);
     void goto_angle_pos_rel(float pos);
     float get_pos();
-    void set_rpm(int rpm_val);
+    void set_rpm(float rpm_val);
     void set_gear_ratio(float ratio_val);
     void print_info();
 
@@ -33,7 +32,7 @@ class Stepper
     uint8_t dir_pin;
     int steps_per_rev;
     int step_time;
-    int rpm;
+    float rpm;
     float ratio;
     float step_angle_factor;
 
@@ -69,7 +68,7 @@ void Stepper::intialize()
   current_pos_angle = 0;
 }
 
-void Stepper::set_rpm(int rpm_val)
+void Stepper::set_rpm(float rpm_val)
 {
   rpm = rpm_val;
   calculate_step_time();
@@ -156,37 +155,11 @@ void Stepper::print_info()
 #define STEPS_PER_REV 400
 #define RATIO 5
 
-constexpr int curve_samples = 360 * 4;
 int incoming_byte = 0;
 bool motor_running = false;
-
-float angles[curve_samples];
-float rpms[curve_samples];
-float x[curve_samples];
-
-void calculate_angle_curve_sin(float max, float period)
-{
-    int iterator = 0;
-    for (float i = 0; i<=5; i += 5.0f / curve_samples) {
-        float b = (M_PI * 2) / period;
-        angles[iterator] = sin(b*i) * max;
-        x[iterator] = i;
-        iterator++;
-    }
-}
-
-void calculate_angular_velocity_curve()
-{
-  for (int i = 1; i < curve_samples; ++i) {
-      float diff_angle = angles[i] - angles[i-1];
-      float diff_time = x[i] - x[i-1];
-      float angular_vel =  diff_angle / diff_time;
-      if(diff_angle == 0.0f)
-          rpms[i-1] = 0;
-      else
-        rpms[i-1] = angular_vel / 6;
-  }
-}
+float period = 1;
+float max_val = 64;
+float iterator = 0.1;
 
 Stepper* motor;
 void setup()
@@ -205,23 +178,22 @@ void loop()
     incoming_byte = Serial.read();
     Serial.println(incoming_byte);
     if(incoming_byte == 99)
-    {
       motor_running = true;
-      Serial.println("Calculating curve");
-      calculate_angle_curve_sin(60, 2);
-      calculate_angular_velocity_curve();
-      for (int i = 0; i < curve_samples; i++)
-      {
-        Serial.println(angles[i]);
-      }
-      
-    }
+
     if(incoming_byte == 100)
       motor_running = false;
   }
 
   if(motor_running)
   {
-    motor->goto_angle_pos_rel(60);
+    float pos = max_val * sin(((2 * PI) / period) * iterator);
+    float rpm = abs(max_val * cos(((2 * PI) / period) * iterator)) + 0.5;
+    motor->set_rpm(rpm);
+    motor->goto_angle_pos_abs(pos);
+    Serial.println(pos);
+    Serial.println(iterator);
+    iterator += 0.1;
+    if(iterator > period)
+      iterator = 0;
   }
 }
