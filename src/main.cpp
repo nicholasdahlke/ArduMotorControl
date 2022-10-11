@@ -162,7 +162,7 @@ float max_val = 64;
 int steps_rev = 400;
 int manual_movement_size = 10;
 uint8_t ser_buffer;
-
+float time = 0;
 Stepper* motor;
 void setup()
 {
@@ -170,6 +170,8 @@ void setup()
   motor = new Stepper(STEP, DIR, steps_rev);
   motor->set_gear_ratio(RATIO);
   motor->set_rpm(200);
+  
+  time = millis();
 }
 
 void handleSerial()
@@ -189,10 +191,15 @@ void handleSerial()
     period = Serial.parseFloat();
   
   if(ser_buffer == 101) //Go forward
+  {
+    motor->set_rpm(60);
     motor->goto_angle_pos_rel(manual_movement_size);
+  }
   if(ser_buffer == 102) //Go backwards
-    motor->goto_angle_pos_rel(manual_movement_size);
-
+  {
+    motor->set_rpm(60);
+    motor->goto_angle_pos_rel(-1 * manual_movement_size);
+  }
   if(ser_buffer == 103) //Set manual step size
     manual_movement_size = Serial.parseFloat();
 
@@ -210,18 +217,23 @@ void readSerial()
   }
 }
 
-
+float iterator = 0;
 
 void loop() 
 { 
   readSerial();
   if(motor_running)
   {
-    float time = static_cast<float>(millis()) / 1000;
-    float pos = max_val * sin(((2 * PI) / period) * (time));
-    float rpm = abs(max_val * cos(((2 * PI) / period) * (time))) + 0.5;
+    
+    if(time - millis() <= 10)
+    {
+      iterator += 0.01;
+      time = millis() / 100;
+    }
+    float pos = max_val * sin(((2 * PI) / period) * (iterator));
+    float rpm = abs(max_val * cos(((2 * PI) / period) * (iterator))) + 0.5;
     motor->set_rpm(rpm);
     motor->goto_angle_pos_abs(pos);
-    //Serial.println(pos);
+    Serial.println(pos);
   }
 }
