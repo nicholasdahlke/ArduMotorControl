@@ -185,10 +185,13 @@ void handleSerial()
     {
       float temp = Serial.parseFloat();
       if(temp < 0 || temp > 360)
+      { 
         max_val = temp;
-    }
+        Serial.println(max_val);
+      }
   if(ser_buffer == 97) // Set period
     period = Serial.parseFloat();
+    Serial.println(period);
   
   if(ser_buffer == 101) //Go forward
   {
