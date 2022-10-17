@@ -184,14 +184,11 @@ void handleSerial()
   if(ser_buffer == 98) // Set max angle
     {
       float temp = Serial.parseFloat();
-      if(temp < 0 || temp > 360)
-      { 
+      if(temp > 0 && temp < 360)
         max_val = temp;
-        Serial.println(max_val);
-      }
+    }
   if(ser_buffer == 97) // Set period
     period = Serial.parseFloat();
-    Serial.println(period);
   
   if(ser_buffer == 101) //Go forward
   {
@@ -220,23 +217,24 @@ void readSerial()
   }
 }
 
-float iterator = 0;
+unsigned long iterator = 0;
 
 void loop() 
 { 
   readSerial();
   if(motor_running)
   {
-    
-    if(time - millis() <= 10)
-    {
-      iterator += 0.01;
-      time = millis() / 100;
-    }
-    float pos = max_val * sin(((2 * PI) / period) * (iterator));
-    float rpm = abs(max_val * cos(((2 * PI) / period) * (iterator))) + 0.5;
+    iterator = millis();
+    Serial.println(iterator);
+    time = static_cast<float>(iterator) / 1000;
+    Serial.println(time);
+
+    float pos = max_val * sin(((2 * PI) / period) * (time));
+    float rpm = abs(max_val * cos(((2 * PI) / period) * (time))) + 0.5;
     motor->set_rpm(rpm);
     motor->goto_angle_pos_abs(pos);
-    Serial.println(pos);
+    //Serial.println(pos);
   }
 }
+
+//Pointer to a timer object, which the stepper class checks regularly
