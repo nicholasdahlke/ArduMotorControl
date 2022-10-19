@@ -12,8 +12,8 @@ class Stepper
       reverse = LOW
     };
 
-    void goto_angle_pos_abs(float pos);
-    void goto_angle_pos_rel(float pos);
+    bool goto_angle_pos_abs(float pos);
+    bool goto_angle_pos_rel(float pos);
     float get_pos();
     void set_rpm(float rpm_val);
     void set_gear_ratio(float ratio_val);
@@ -25,17 +25,18 @@ class Stepper
     void calculate_step_time();
     void calculate_angular_position();
     void calculate_step_angle_factor();
-    int do_steps(int steps_to_do);
+    void do_step(direction dir);
     int current_pos_steps;
     float current_pos_angle;
     uint8_t step_pin;
     uint8_t dir_pin;
     int steps_per_rev;
-    int step_time;
+    unsigned long step_time;
     float rpm;
     float ratio;
     float step_angle_factor;
 
+    unsigned long micros_last = 0;
 
 };
 
@@ -99,56 +100,83 @@ void Stepper::calculate_step_angle_factor()
   step_angle_factor = 360.0f / temp;
 }
 
-int Stepper::do_steps(int steps_to_do)
+/*void Stepper::do_step(direction dir)
 {
-  int steps = abs(steps_to_do);
-  direction dir = steps_to_do > 0 ? forward : reverse;
+          //Serial.println("BP7");
   digitalWrite(dir_pin, dir);
-  for (int i = 0; i < steps; i++)
+
+  //Serial.print("delta ");
+  //Serial.println(micros() - micros_last);
+  //Serial.println("");
+  //Serial.println(step_time);
+  //Serial.println("");
+  if(micros() - micros_last >= step_time)
   {
-    digitalWrite(step_pin, LOW);
-    delayMicroseconds(step_time);
-    digitalWrite(step_pin, HIGH);
-    delayMicroseconds(step_time);
+            //Serial.println("BP8");
+    digitalWrite(step_pin, !digitalRead(step_pin));
+    current_pos_steps++;
   }
-  return steps_to_do;
+  micros_last = micros();
+}*/
+
+void Stepper::do_step(direction dir)
+{
+  digitalWrite(dir_pin, dir);
+  digitalWrite(step_pin, LOW);
+  delayMicroseconds(step_time);
+  digitalWrite(step_pin, HIGH);
+  delayMicroseconds(step_time);
+  current_pos_steps++;
 }
 
-void Stepper::goto_angle_pos_rel(float pos)
+bool Stepper::goto_angle_pos_rel(float pos)
 {
   int steps_to_go = static_cast<int>(pos / step_angle_factor);
-  current_pos_steps += do_steps(steps_to_go);
+  int endpoint = current_pos_steps + steps_to_go;
+  direction dir = steps_to_go > 0 ? forward : reverse;
+  if(current_pos_steps != endpoint)
+  {
+    do_step(dir);
+    return false;
+  }
   calculate_angular_position();
+  return true;
 }
 
-void Stepper::goto_angle_pos_abs(float pos)
+bool Stepper::goto_angle_pos_abs(float pos)
 {
-  int steps_to_go = static_cast<int>(pos / step_angle_factor) - current_pos_steps;
-  current_pos_steps += do_steps(steps_to_go);
+  int endpoint = static_cast<int>(pos / step_angle_factor);
+  direction dir = endpoint > current_pos_steps ? forward : reverse;
+  if(current_pos_steps != endpoint)
+  {
+    do_step(dir);
+    return false;
+  }
   calculate_angular_position();
+  return true;
 }
 
 void Stepper::print_info()
 {
-  Serial.print("Step pin: ");
-  Serial.println(step_pin);
-  Serial.print("Dir  pin: ");
-  Serial.println(dir_pin);
-  Serial.print("Step angle factor: ");
-  Serial.println(step_angle_factor);
-  Serial.print("Step time: ");
-  Serial.println(step_time);
-  Serial.print("Steps per rev: ");
-  Serial.println(steps_per_rev);
-  Serial.print("Ratio: ");
-  Serial.println(ratio);
-  Serial.print("RPM: ");
-  Serial.println(rpm);
-  Serial.print("Curr Pos Angle: ");
-  Serial.println(current_pos_angle);
-  Serial.print("Curr Pos Steps: ");
-  Serial.println(current_pos_steps);
-  Serial.println();
+  //Serial.print("Step pin: ");
+  //Serial.println(step_pin);
+  //Serial.print("Dir  pin: ");
+  //Serial.println(dir_pin);
+  //Serial.print("Step angle factor: ");
+  //Serial.println(step_angle_factor);
+  //Serial.print("Step time: ");
+  //Serial.println(step_time);
+  //Serial.print("Steps per rev: ");
+  //Serial.println(steps_per_rev);
+  //Serial.print("Ratio: ");
+  //Serial.println(ratio);
+  //Serial.print("RPM: ");
+  //Serial.println(rpm);
+  //Serial.print("Curr Pos Angle: ");
+  //Serial.println(current_pos_angle);
+  //Serial.print("Curr Pos Steps: ");
+  //Serial.println(current_pos_steps);
+  //Serial.println();
 }
 
 #define STEP 11
@@ -176,7 +204,7 @@ void setup()
 
 void handleSerial()
 {
-  Serial.println(ser_buffer);
+  //Serial.println(ser_buffer);
   if(ser_buffer == 99)  // Turn on motor
     motor_running = true;
   if (ser_buffer == 100) // Turn off motor
@@ -217,7 +245,8 @@ void readSerial()
 }
 
 unsigned long iterator = 0;
-
+bool pos_reached = true;
+float pos;
 void loop() 
 { 
   readSerial();
@@ -225,12 +254,24 @@ void loop()
   {
     iterator = millis();
     time = static_cast<float>(iterator) / 1000;
+    if(pos_reached)
+    {
+      pos = max_val * sin(((2 * PI) / period) * (time));
+              //Serial.println("BP1");
+      motor->set_rpm(abs(max_val * cos(((2 * PI) / period) * (time))) + 0.5);
+              //Serial.println("BP2");
+      Serial.println(pos);
+              //Serial.println("BP3");
+      pos_reached = false;
+              //Serial.println("BP4");
+    }
+    if(motor->goto_angle_pos_abs(pos))
+    {
+              //Serial.println("BP6");
+        pos_reached = true;
 
-    float pos = max_val * sin(((2 * PI) / period) * (time));
-    float rpm = abs(max_val * cos(((2 * PI) / period) * (time))) + 0.5;
-    motor->set_rpm(rpm);
-    motor->goto_angle_pos_abs(pos);
-    Serial.println(pos);
+    }
+
   }
 }
 
