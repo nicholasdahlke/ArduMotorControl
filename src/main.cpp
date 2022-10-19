@@ -203,8 +203,7 @@ void handleSerial()
   if(ser_buffer == 103) //Set manual step size
     manual_movement_size = Serial.parseFloat();
 
-  Serial.println(max_val);
-  Serial.println(period);
+
 }
 
 void readSerial()
@@ -225,15 +224,13 @@ void loop()
   if(motor_running)
   {
     iterator = millis();
-    Serial.println(iterator);
     time = static_cast<float>(iterator) / 1000;
-    Serial.println(time);
 
     float pos = max_val * sin(((2 * PI) / period) * (time));
     float rpm = abs(max_val * cos(((2 * PI) / period) * (time))) + 0.5;
     motor->set_rpm(rpm);
     motor->goto_angle_pos_abs(pos);
-    //Serial.println(pos);
+    Serial.println(pos);
   }
 }
 
