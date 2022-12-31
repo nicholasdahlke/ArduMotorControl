@@ -14,11 +14,16 @@ class Stepper
 
     void goto_angle_pos_abs(float pos);
     void goto_angle_pos_rel(float pos);
+    void goto_angle_pos_abs_direct(float pos);
+    void goto_angle_pos_rel_direct(float pos);
     float get_pos();
+    void set_pos(int offset = 0);
     void set_rpm(float rpm_val);
     void set_gear_ratio(float ratio_val);
     void print_info();
-
+    void run();
+    void clear_steps();
+    int get_remaining();
 
   private:
     void intialize();
@@ -26,16 +31,20 @@ class Stepper
     void calculate_angular_position();
     void calculate_step_angle_factor();
     int do_steps(int steps_to_do);
+    int do_steps_direct(int steps_to_do);
+    void do_step();
     int current_pos_steps;
     float current_pos_angle;
     uint8_t step_pin;
     uint8_t dir_pin;
     int steps_per_rev;
-    int step_time;
+    unsigned long step_time;
+    unsigned long step_time_last;
     float rpm;
     float ratio;
     float step_angle_factor;
-
+    int remaining_steps = 0;
+    direction dir;
 
 };
 
@@ -52,8 +61,16 @@ Stepper::Stepper(uint8_t step, uint8_t dir, int steps_rev)
 }
 
 float Stepper::get_pos()
+
 {
   return current_pos_angle;
+}
+
+void Stepper::set_pos(int offset)
+
+{
+  current_pos_steps = offset;
+  calculate_angular_position();
 }
 
 void Stepper::intialize()
@@ -66,6 +83,11 @@ void Stepper::intialize()
 
   current_pos_steps = 0;
   current_pos_angle = 0;
+}
+
+int Stepper::get_remaining()
+{
+  return remaining_steps;
 }
 
 void Stepper::set_rpm(float rpm_val)
@@ -84,13 +106,14 @@ void Stepper::set_gear_ratio(float ratio_val)
 
 void Stepper::calculate_step_time()
 {
-  float step_time_seconds = 60 / (2 * rpm * ratio * steps_per_rev);
-  step_time = 1e6 * step_time_seconds;
+  //float step_time_seconds = 60 / (2 * rpm * ratio * steps_per_rev);
+  float step_time_seconds = ((21600.0f / (rpm)) - 2.88e-3f * ratio * static_cast<float>(steps_per_rev)) / (360.0f * static_cast<float>(steps_per_rev) * ratio);
+  step_time = static_cast<unsigned long>(1e6f * step_time_seconds);
 }
 
 void Stepper::calculate_angular_position()
 {
-  current_pos_angle = current_pos_steps * (360/steps_per_rev);
+  current_pos_angle = static_cast<float>(current_pos_steps) * step_angle_factor;
 }
 
 void Stepper::calculate_step_angle_factor()
@@ -102,30 +125,71 @@ void Stepper::calculate_step_angle_factor()
 int Stepper::do_steps(int steps_to_do)
 {
   int steps = abs(steps_to_do);
-  direction dir = steps_to_do > 0 ? forward : reverse;
+  dir = steps_to_do > 0 ? forward : reverse;
   digitalWrite(dir_pin, dir);
-  for (int i = 0; i < steps; i++)
-  {
-    digitalWrite(step_pin, LOW);
-    delayMicroseconds(step_time);
-    digitalWrite(step_pin, HIGH);
-    delayMicroseconds(step_time);
-  }
+  remaining_steps += steps;
   return steps_to_do;
+}
+
+int Stepper::do_steps_direct(int steps_to_do)
+{
+  int ret = do_steps(steps_to_do);
+  while (get_remaining() != 0)
+  {
+    run();
+  }
+  return ret;
+}
+
+void Stepper::clear_steps()
+{
+  remaining_steps = 0;
+}
+
+void Stepper::do_step()
+{
+  digitalWrite(step_pin, LOW);
+  delayMicroseconds(8);
+  digitalWrite(step_pin, HIGH);
 }
 
 void Stepper::goto_angle_pos_rel(float pos)
 {
   int steps_to_go = static_cast<int>(pos / step_angle_factor);
-  current_pos_steps += do_steps(steps_to_go);
-  calculate_angular_position();
+  do_steps(steps_to_go);
 }
 
 void Stepper::goto_angle_pos_abs(float pos)
 {
   int steps_to_go = static_cast<int>(pos / step_angle_factor) - current_pos_steps;
-  current_pos_steps += do_steps(steps_to_go);
+  do_steps(steps_to_go);
+}
+
+void Stepper::goto_angle_pos_rel_direct(float pos)
+{
+  int steps_to_go = static_cast<int>(pos / step_angle_factor);
+  do_steps_direct(steps_to_go);
+}
+
+void Stepper::goto_angle_pos_abs_direct(float pos)
+{
+  int steps_to_go = static_cast<int>(pos / step_angle_factor) - current_pos_steps;
+  do_steps_direct(steps_to_go);
+}
+
+void Stepper::run()
+{
+ if(remaining_steps > 0 && (micros() - step_time_last) >= step_time)
+ {
+  do_step();
+  remaining_steps--;
+  step_time_last = micros();
+  if(dir == forward)
+    current_pos_steps++;
+  else
+    current_pos_steps--;
   calculate_angular_position();
+ }
 }
 
 void Stepper::print_info()
@@ -151,60 +215,97 @@ void Stepper::print_info()
   Serial.println();
 }
 
-#define STEP 11
-#define DIR 10
+#define STEP 11 // PB5 - 11
+#define DIR 10 // PB4 - 10
 #define RATIO 5
+
+enum motorMotionType
+{
+  LINEAR,
+  SINUSOIDAL
+};
 
 int incoming_byte = 0;
 bool motor_running = false;
-float period = 1;
-float max_val = 64;
-int steps_rev = 400;
+float period = 2.0;
+float max_val = 25.0;
+int steps_rev = 1600;
 int manual_movement_size = 10;
 uint8_t ser_buffer;
-float time = 0;
+
 Stepper* motor;
+
+motorMotionType motion = SINUSOIDAL;
+
 void setup()
 {
-  Serial.begin(9600);
+  Serial.begin(1000000);
   motor = new Stepper(STEP, DIR, steps_rev);
   motor->set_gear_ratio(RATIO);
   motor->set_rpm(200);
-  
-  time = millis();
 }
 
 void handleSerial()
 {
-  Serial.println(ser_buffer);
   if(ser_buffer == 99)  // Turn on motor
     motor_running = true;
+
   if (ser_buffer == 100) // Turn off motor
     motor_running = false;
+
   if(ser_buffer == 98) // Set max angle
-    {
-      float temp = Serial.parseFloat();
-      if(temp > 0 && temp < 360)
-        max_val = temp;
-    }
+  {
+    float temp = Serial.parseFloat();
+    max_val = temp;
+  }
+
   if(ser_buffer == 97) // Set period
     period = Serial.parseFloat();
   
   if(ser_buffer == 101) //Go forward
   {
     motor->set_rpm(60);
-    motor->goto_angle_pos_rel(manual_movement_size);
+    motor->goto_angle_pos_rel_direct(manual_movement_size);
   }
+
   if(ser_buffer == 102) //Go backwards
   {
     motor->set_rpm(60);
-    motor->goto_angle_pos_rel(-1 * manual_movement_size);
+    motor->goto_angle_pos_rel_direct(-manual_movement_size);
   }
+
   if(ser_buffer == 103) //Set manual step size
     manual_movement_size = Serial.parseFloat();
+    
+  if (ser_buffer == 121)  //Set sinusoidal motion
+  {
+    motion = SINUSOIDAL;
+    motor->clear_steps();
+  }
 
-  Serial.println(max_val);
-  Serial.println(period);
+  if (ser_buffer == 122)  //Set Linear Ramp Motion
+  {
+    motion = LINEAR;
+    motor->clear_steps();
+    motor->set_rpm(60);
+    motor->set_pos(0);
+    Serial.println(motor->get_pos());
+    motor->goto_angle_pos_abs_direct(-max_val);
+    Serial.println(motor->get_pos());
+  }
+  
+  if (ser_buffer == 120) // Goto Position
+  {
+    motor->clear_steps();
+    motor->set_rpm(60);
+    motor->goto_angle_pos_abs_direct(Serial.parseFloat());
+    motor_running = false;
+  }
+  
+
+  motor->clear_steps();
+  delay(500); 
+
 }
 
 void readSerial()
@@ -217,24 +318,34 @@ void readSerial()
   }
 }
 
-unsigned long iterator = 0;
 
 void loop() 
 { 
   readSerial();
   if(motor_running)
   {
-    iterator = millis();
-    Serial.println(iterator);
-    time = static_cast<float>(iterator) / 1000;
-    Serial.println(time);
+    if(motor->get_remaining() == 0 && motion == SINUSOIDAL)
+    {
+      float iterator = micros() / 1e6;
+      float pos = max_val * sin(((2 * PI) / period) * iterator);
+      //float rpm = abs(((2 * PI * max_val) / period) * cos(((2 * PI) / period) * iterator)) + 0.5;     
+      //motor->set_rpm(rpm);
+      motor->goto_angle_pos_abs(pos);
+    }
 
-    float pos = max_val * sin(((2 * PI) / period) * (time));
-    float rpm = abs(max_val * cos(((2 * PI) / period) * (time))) + 0.5;
-    motor->set_rpm(rpm);
-    motor->goto_angle_pos_abs(pos);
-    //Serial.println(pos);
+    if (motor->get_remaining() == 0 && motion == LINEAR)
+    {
+      motor->set_rpm(abs((2 * max_val)/(6 * period)));
+      motor->goto_angle_pos_abs(max_val);
+     
+    }
+    if (abs(motor->get_pos()) > abs(max_val) && motion == LINEAR)
+    {
+      motor_running = false;
+    }
+
+    Serial.println(motor->get_pos());
+    motor->run();
   }
 }
 
-//Pointer to a timer object, which the stepper class checks regularly
