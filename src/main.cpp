@@ -328,8 +328,8 @@ void loop()
     {
       float iterator = micros() / 1e6;
       float pos = max_val * sin(((2 * PI) / period) * iterator);
-      //float rpm = abs(((2 * PI * max_val) / period) * cos(((2 * PI) / period) * iterator)) + 0.5;     
-      //motor->set_rpm(rpm);
+      float rpm = abs(((2 * PI * max_val) / period) * cos(((2 * PI) / period) * iterator)) + 0.5;     
+      motor->set_rpm(rpm);
       motor->goto_angle_pos_abs(pos);
     }
 
