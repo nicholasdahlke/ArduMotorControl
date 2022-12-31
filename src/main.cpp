@@ -125,8 +125,12 @@ void Stepper::calculate_step_angle_factor()
 int Stepper::do_steps(int steps_to_do)
 {
   int steps = abs(steps_to_do);
+  bool dir_changed = false;
+  if((steps_to_do > 0 ? forward : reverse) != dir)
+    dir_changed = true;
   dir = steps_to_do > 0 ? forward : reverse;
-  digitalWrite(dir_pin, dir);
+  if(dir_changed)
+    digitalWrite(dir_pin, dir);
   remaining_steps += steps;
   return steps_to_do;
 }
@@ -193,6 +197,7 @@ void Stepper::run()
 }
 
 void Stepper::print_info()
+
 {
   Serial.print("Step pin: ");
   Serial.println(step_pin);
@@ -229,7 +234,7 @@ int incoming_byte = 0;
 bool motor_running = false;
 float period = 2.0;
 float max_val = 25.0;
-int steps_rev = 1600;
+int steps_rev = 440;
 int manual_movement_size = 10;
 uint8_t ser_buffer;
 
@@ -324,6 +329,7 @@ void loop()
   readSerial();
   if(motor_running)
   {
+    unsigned long t1 = micros(); 
     if(motor->get_remaining() == 0 && motion == SINUSOIDAL)
     {
       float iterator = micros() / 1e6;
@@ -346,6 +352,9 @@ void loop()
 
     Serial.println(motor->get_pos());
     motor->run();
+    unsigned long t2 = micros();
+    Serial.print("task time:");
+    Serial.println(t2-t1);
   }
 }
 
