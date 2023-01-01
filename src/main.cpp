@@ -25,6 +25,8 @@ class Stepper
     void clear_steps();
     int get_remaining();
 
+    bool continuous_stepping = false;
+
   private:
     void intialize();
     void calculate_step_time();
@@ -33,6 +35,8 @@ class Stepper
     int do_steps(int steps_to_do);
     int do_steps_direct(int steps_to_do);
     void do_step();
+    void set_dir();
+    void set_dir_from_steps(int steps_to_do);
     int current_pos_steps;
     float current_pos_angle;
     uint8_t step_pin;
@@ -73,6 +77,26 @@ void Stepper::set_pos(int offset)
   calculate_angular_position();
 }
 
+void Stepper::set_dir()
+{
+  bool dir_changed = false;
+  if((rpm > 0 ? forward : reverse) != dir)
+    dir_changed = true;
+  dir = rpm > 0 ? forward : reverse;
+  if(dir_changed)
+    digitalWrite(dir_pin, dir);
+}
+
+void Stepper::set_dir_from_steps(int steps_to_do)
+{
+  bool dir_changed = false;
+  if((steps_to_do > 0 ? forward : reverse) != dir)
+    dir_changed = true;
+  dir = steps_to_do > 0 ? forward : reverse;
+  if(dir_changed)
+    digitalWrite(dir_pin, dir);
+}
+
 void Stepper::intialize()
 {
   pinMode(step_pin, OUTPUT);
@@ -94,6 +118,8 @@ void Stepper::set_rpm(float rpm_val)
 {
   rpm = rpm_val;
   calculate_step_time();
+  if(continuous_stepping)
+    set_dir();
 }
 
 void Stepper::set_gear_ratio(float ratio_val)
@@ -107,7 +133,7 @@ void Stepper::set_gear_ratio(float ratio_val)
 void Stepper::calculate_step_time()
 {
   //float step_time_seconds = 60 / (2 * rpm * ratio * steps_per_rev);
-  float step_time_seconds = ((21600.0f / (rpm)) - 2.88e-3f * ratio * static_cast<float>(steps_per_rev)) / (360.0f * static_cast<float>(steps_per_rev) * ratio);
+  float step_time_seconds = ((21600.0f / (abs(rpm))) - 2.88e-3f * ratio * static_cast<float>(steps_per_rev)) / (360.0f * static_cast<float>(steps_per_rev) * ratio);
   step_time = static_cast<unsigned long>(1e6f * step_time_seconds);
 }
 
@@ -125,12 +151,10 @@ void Stepper::calculate_step_angle_factor()
 int Stepper::do_steps(int steps_to_do)
 {
   int steps = abs(steps_to_do);
-  bool dir_changed = false;
-  if((steps_to_do > 0 ? forward : reverse) != dir)
-    dir_changed = true;
-  dir = steps_to_do > 0 ? forward : reverse;
-  if(dir_changed)
-    digitalWrite(dir_pin, dir);
+  if(continuous_stepping)
+    set_dir();
+  else
+    set_dir_from_steps(steps_to_do);
   remaining_steps += steps;
   return steps_to_do;
 }
@@ -183,8 +207,9 @@ void Stepper::goto_angle_pos_abs_direct(float pos)
 
 void Stepper::run()
 {
- if(remaining_steps > 0 && (micros() - step_time_last) >= step_time)
- {
+  //if((micros() - step_time_last) >= step_time)  
+  if((remaining_steps > 0 || continuous_stepping) && (micros() - step_time_last) >= step_time)
+  {
   do_step();
   remaining_steps--;
   step_time_last = micros();
@@ -193,7 +218,7 @@ void Stepper::run()
   else
     current_pos_steps--;
   calculate_angular_position();
- }
+  }
 }
 
 void Stepper::print_info()
@@ -329,19 +354,21 @@ void loop()
   readSerial();
   if(motor_running)
   {
-    unsigned long t1 = micros(); 
-    if(motor->get_remaining() == 0 && motion == SINUSOIDAL)
+    if(motion == SINUSOIDAL)
+    //if(motor->get_remaining() == 0 && motion == SINUSOIDAL)
     {
+      motor->continuous_stepping = true;
       float iterator = micros() / 1e6;
-      float pos = max_val * sin(((2 * PI) / period) * iterator);
-      float rpm = abs(((2 * PI * max_val) / period) * cos(((2 * PI) / period) * iterator)) + 0.5;     
+      //float pos = max_val * sin(((2 * PI) / period) * iterator);
+      float rpm = ((2 * PI * max_val) / period) * cos(((2 * PI) / period) * iterator);     
       motor->set_rpm(rpm);
-      motor->goto_angle_pos_abs(pos);
+      //motor->goto_angle_pos_abs(pos);
     }
 
     if (motor->get_remaining() == 0 && motion == LINEAR)
     {
-      motor->set_rpm(abs((2 * max_val)/(6 * period)));
+      motor->continuous_stepping = false;
+      motor->set_rpm((2 * max_val)/(6 * period));
       motor->goto_angle_pos_abs(max_val);
      
     }
@@ -352,9 +379,6 @@ void loop()
 
     Serial.println(motor->get_pos());
     motor->run();
-    unsigned long t2 = micros();
-    Serial.print("task time:");
-    Serial.println(t2-t1);
   }
 }
 
