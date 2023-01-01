@@ -85,6 +85,8 @@ void Stepper::set_dir()
   dir = rpm > 0 ? forward : reverse;
   if(dir_changed)
     digitalWrite(dir_pin, dir);
+  if(dir_changed)
+    Serial.print("Dir changed");
 }
 
 void Stepper::set_dir_from_steps(int steps_to_do)
@@ -259,7 +261,7 @@ int incoming_byte = 0;
 bool motor_running = false;
 float period = 2.0;
 float max_val = 25.0;
-int steps_rev = 440;
+int steps_rev = 400;
 int manual_movement_size = 10;
 uint8_t ser_buffer;
 
